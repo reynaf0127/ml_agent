@@ -1,0 +1,14 @@
+{
+    "ordinal_columns": [],
+    "map_columns": [
+        "City_Type",
+        "Gender",
+        "Range_Anxiety_Level"
+    ],
+    "onehot_columns": [
+        "Current_Car_Type",
+        "Home_Charging_Possible",
+        "Subsidy_Available",
+        "Will_Buy_EV"
+    ]
+}

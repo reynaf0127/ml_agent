@@ -1,0 +1,9 @@
+{
+    "log_columns": [],
+    "clip_columns": [],
+    "clip_quantiles": {
+        "lower": 0.01,
+        "upper": 0.99
+    },
+    "scaler": "standard"
+}

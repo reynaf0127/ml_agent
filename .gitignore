@@ -1,0 +1,31 @@
+# Virtual environment
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+.DS_Store
+
+# Environment / credentials
+.env
+*.key.json
+service-account*.json
+credentials*.json
+
+# Local datasets
+data/raw/
+*.parquet
+
+# Model artifacts
+artifacts/
+*.joblib
+*.pkl
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Credentials / secrets
+credentials/
+*.key.json
+service-account*.json
