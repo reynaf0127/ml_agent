@@ -7,6 +7,8 @@ from sklearn.base import clone
 from sklearn.model_selection import (
     GridSearchCV,
     cross_validate,
+    StratifiedKFold,
+    KFold,
 )
 from sklearn.pipeline import Pipeline
 
@@ -122,16 +124,24 @@ REGRESSION_PARAM_GRIDS = {
 CLASSIFICATION_PARAM_GRIDS = {
 
     "logistic_regression": {
+
         "model__C": [
+            0.001,
             0.01,
             0.1,
             1.0,
             10.0,
             100.0,
         ],
+
+        "model__class_weight": [
+            None,
+            "balanced",
+        ],
     },
 
     "decision_tree": {
+
         "model__max_depth": [
             3,
             5,
@@ -154,9 +164,15 @@ CLASSIFICATION_PARAM_GRIDS = {
             10,
             20,
         ],
+
+        "model__class_weight": [
+            None,
+            "balanced",
+        ],
     },
 
     "random_forest": {
+
         "model__n_estimators": [
             100,
             300,
@@ -182,9 +198,15 @@ CLASSIFICATION_PARAM_GRIDS = {
             0.5,
             1.0,
         ],
+
+        "model__class_weight": [
+            None,
+            "balanced",
+        ],
     },
 
     "gradient_boosting": {
+
         "model__n_estimators": [
             100,
             200,
@@ -207,10 +229,36 @@ CLASSIFICATION_PARAM_GRIDS = {
 
 
 # ============================================================
+# CV SPLITTER
+# ============================================================
+
+def get_cv_splitter(
+    problem_type,
+):
+
+    if problem_type == "classification":
+
+        return StratifiedKFold(
+            n_splits=5,
+            shuffle=True,
+            random_state=42,
+        )
+
+    return KFold(
+        n_splits=5,
+        shuffle=True,
+        random_state=42,
+    )
+
+
+# ============================================================
 # SCORING
 # ============================================================
 
-def get_scoring(problem_type):
+def get_scoring(
+    problem_type,
+    y=None,
+):
 
     if problem_type == "regression":
 
@@ -224,6 +272,59 @@ def get_scoring(problem_type):
             "r2":
                 "r2",
         }
+
+    # --------------------------------------------------------
+    # Classification
+    # --------------------------------------------------------
+
+    n_classes = None
+
+    if y is not None:
+
+        n_classes = (
+            pd.Series(y)
+            .nunique()
+        )
+
+    # --------------------------------------------------------
+    # Binary classification
+    # --------------------------------------------------------
+
+    if (
+        n_classes is None
+        or n_classes == 2
+    ):
+
+        return {
+            "accuracy":
+                "accuracy",
+
+            "precision":
+                "precision",
+
+            "recall":
+                "recall",
+
+            "f1":
+                "f1",
+
+            "roc_auc":
+                "roc_auc",
+
+            # PR-AUC / Average Precision
+            "pr_auc":
+                "average_precision",
+
+            "neg_log_loss":
+                "neg_log_loss",
+        }
+
+    # --------------------------------------------------------
+    # Multiclass classification
+    #
+    # Average precision is less straightforward for generic
+    # multiclass problems, so use weighted metrics here.
+    # --------------------------------------------------------
 
     return {
         "accuracy":
@@ -240,7 +341,55 @@ def get_scoring(problem_type):
 
         "roc_auc":
             "roc_auc_ovr_weighted",
+
+        "neg_log_loss":
+            "neg_log_loss",
     }
+
+
+# ============================================================
+# TUNING OBJECTIVE
+# ============================================================
+
+def get_tuning_objective(
+    problem_type,
+    y_train,
+):
+
+    # --------------------------------------------------------
+    # Regression
+    # --------------------------------------------------------
+
+    if problem_type == "regression":
+
+        return (
+            "neg_root_mean_squared_error",
+            "RMSE",
+        )
+
+    # --------------------------------------------------------
+    # Classification
+    # --------------------------------------------------------
+
+    n_classes = (
+        pd.Series(y_train)
+        .nunique()
+    )
+
+    if n_classes == 2:
+
+        # Especially appropriate for imbalanced binary
+        # classification such as the Criteo conversion model.
+        return (
+            "average_precision",
+            "PR-AUC",
+        )
+
+    # Generic multiclass fallback
+    return (
+        "roc_auc_ovr_weighted",
+        "ROC-AUC",
+    )
 
 
 # ============================================================
@@ -259,6 +408,11 @@ def run_cross_validation(
     print("=" * 70)
 
     scoring = get_scoring(
+        problem_type=problem_type,
+        y=y_train,
+    )
+
+    cv = get_cv_splitter(
         problem_type
     )
 
@@ -266,7 +420,7 @@ def run_cross_validation(
         pipeline,
         X_train,
         y_train,
-        cv=5,
+        cv=cv,
         scoring=scoring,
         n_jobs=-1,
         return_train_score=True,
@@ -277,17 +431,27 @@ def run_cross_validation(
     for metric in scoring:
 
         train_values = (
-            scores[f"train_{metric}"]
+            scores[
+                f"train_{metric}"
+            ]
         )
 
         val_values = (
-            scores[f"test_{metric}"]
+            scores[
+                f"test_{metric}"
+            ]
         )
 
-        # sklearn returns negative error metrics
+        # ----------------------------------------------------
+        # sklearn returns negative values for loss/error
+        # metrics because higher score must always be better.
+        # Convert them back for human-readable output.
+        # ----------------------------------------------------
+
         if metric in [
             "rmse",
             "mae",
+            "neg_log_loss",
         ]:
 
             train_values = (
@@ -298,20 +462,49 @@ def run_cross_validation(
                 -val_values
             )
 
+        display_metric = metric
+
+        if metric == "pr_auc":
+            display_metric = "PR_AUC"
+
+        elif metric == "roc_auc":
+            display_metric = "ROC_AUC"
+
+        elif metric == "neg_log_loss":
+            display_metric = "LogLoss"
+
+        elif metric == "rmse":
+            display_metric = "RMSE"
+
+        elif metric == "mae":
+            display_metric = "MAE"
+
+        elif metric == "r2":
+            display_metric = "R2"
+
         rows.append({
-            "metric": metric,
+            "metric":
+                display_metric,
 
             "train_mean":
-                np.mean(train_values),
+                np.mean(
+                    train_values
+                ),
 
             "train_std":
-                np.std(train_values),
+                np.std(
+                    train_values
+                ),
 
             "cv_mean":
-                np.mean(val_values),
+                np.mean(
+                    val_values
+                ),
 
             "cv_std":
-                np.std(val_values),
+                np.std(
+                    val_values
+                ),
         })
 
     result = pd.DataFrame(
@@ -321,7 +514,9 @@ def run_cross_validation(
     print(
         result
         .round(4)
-        .to_string(index=False)
+        .to_string(
+            index=False
+        )
     )
 
     return result
@@ -341,47 +536,90 @@ def tune_model(
 ):
 
     print("\n" + "=" * 70)
-    print(f"MODEL TUNING: {model_name}")
+    print(
+        f"MODEL TUNING: "
+        f"{model_name}"
+    )
     print("=" * 70)
+
+    # --------------------------------------------------------
+    # Build fresh pipeline
+    # --------------------------------------------------------
 
     pipeline = Pipeline([
         (
             "preprocessor",
-            clone(preprocessor),
+            clone(
+                preprocessor
+            ),
         ),
+
         (
             "model",
-            clone(model),
+            clone(
+                model
+            ),
         ),
     ])
 
     # --------------------------------------------------------
-    # Get parameter grid
+    # Parameter grid
     # --------------------------------------------------------
 
     if problem_type == "regression":
 
         param_grid = (
-            REGRESSION_PARAM_GRIDS.get(
+            REGRESSION_PARAM_GRIDS
+            .get(
                 model_name,
                 {},
             )
         )
 
-        scoring = (
-            "neg_root_mean_squared_error"
+    elif problem_type == "classification":
+
+        param_grid = (
+            CLASSIFICATION_PARAM_GRIDS
+            .get(
+                model_name,
+                {},
+            )
         )
 
     else:
 
-        param_grid = (
-            CLASSIFICATION_PARAM_GRIDS.get(
-                model_name,
-                {},
-            )
+        raise ValueError(
+            "Unknown problem type: "
+            f"{problem_type}"
         )
 
-        scoring = "f1_weighted"
+    # --------------------------------------------------------
+    # Determine tuning objective
+    # --------------------------------------------------------
+
+    (
+        scoring,
+        metric_name,
+    ) = get_tuning_objective(
+        problem_type=problem_type,
+        y_train=y_train,
+    )
+
+    print(
+        "\nTuning objective:"
+    )
+
+    print(
+        f"  {metric_name}"
+    )
+
+    # --------------------------------------------------------
+    # CV strategy
+    # --------------------------------------------------------
+
+    cv = get_cv_splitter(
+        problem_type
+    )
 
     # --------------------------------------------------------
     # No meaningful hyperparameters
@@ -395,18 +633,22 @@ def tune_model(
         )
 
         print(
-            "\nRunning cross-validation instead..."
+            "\nRunning cross-validation "
+            "instead..."
         )
 
-        cv_results = run_cross_validation(
-            pipeline=pipeline,
-            problem_type=problem_type,
-            X_train=X_train,
-            y_train=y_train,
+        cv_results = (
+            run_cross_validation(
+                pipeline=pipeline,
+                problem_type=problem_type,
+                X_train=X_train,
+                y_train=y_train,
+            )
         )
 
         print(
-            "\nFitting model on full training set..."
+            "\nFitting model on full "
+            "training set..."
         )
 
         pipeline.fit(
@@ -421,20 +663,42 @@ def tune_model(
         )
 
     # --------------------------------------------------------
-    # Grid search
+    # Print grid
     # --------------------------------------------------------
 
-    print("\nParameter grid:")
+    print(
+        "\nParameter grid:"
+    )
 
-    for param, values in param_grid.items():
+    total_candidates = 1
+
+    for (
+        param,
+        values,
+    ) in param_grid.items():
 
         print(
-            f"  {param}: {values}"
+            f"  {param}: "
+            f"{values}"
         )
+
+        total_candidates *= (
+            len(values)
+        )
+
+    print(
+        "\nNumber of parameter "
+        f"combinations: "
+        f"{total_candidates:,}"
+    )
 
     print(
         "\nRunning GridSearchCV..."
     )
+
+    # --------------------------------------------------------
+    # Grid search
+    # --------------------------------------------------------
 
     start = time.time()
 
@@ -442,10 +706,12 @@ def tune_model(
         estimator=pipeline,
         param_grid=param_grid,
         scoring=scoring,
-        cv=5,
+        cv=cv,
         n_jobs=-1,
         verbose=1,
         return_train_score=True,
+        refit=True,
+        error_score="raise",
     )
 
     search.fit(
@@ -458,6 +724,10 @@ def tune_model(
         - start
     )
 
+    # ========================================================
+    # RESULTS
+    # ========================================================
+
     print("\n" + "=" * 70)
     print("TUNING RESULTS")
     print("=" * 70)
@@ -467,15 +737,23 @@ def tune_model(
         f"{elapsed:.2f} seconds"
     )
 
-    print("\nBest parameters:")
+    print(
+        "\nBest parameters:"
+    )
 
-    for key, value in (
-        search.best_params_.items()
-    ):
+    for (
+        key,
+        value,
+    ) in search.best_params_.items():
 
         print(
-            f"  {key}: {value}"
+            f"  {key}: "
+            f"{value}"
         )
+
+    # --------------------------------------------------------
+    # Human-readable best score
+    # --------------------------------------------------------
 
     if problem_type == "regression":
 
@@ -483,25 +761,31 @@ def tune_model(
             -search.best_score_
         )
 
-        print(
-            f"\nBest CV RMSE: "
-            f"{best_score:.4f}"
-        )
-
     else:
 
-        print(
-            f"\nBest CV F1: "
-            f"{search.best_score_:.4f}"
+        best_score = (
+            search.best_score_
         )
 
-    # --------------------------------------------------------
-    # Show top search results
-    # --------------------------------------------------------
-
-    search_results = pd.DataFrame(
-        search.cv_results_
+    print(
+        f"\nBest CV "
+        f"{metric_name}: "
+        f"{best_score:.4f}"
     )
+
+    # ========================================================
+    # SEARCH RESULT TABLE
+    # ========================================================
+
+    search_results = (
+        pd.DataFrame(
+            search.cv_results_
+        )
+    )
+
+    # --------------------------------------------------------
+    # Regression
+    # --------------------------------------------------------
 
     if problem_type == "regression":
 
@@ -513,48 +797,194 @@ def tune_model(
             ]
         )
 
-        columns = [
+        search_results[
+            "Train_RMSE"
+        ] = (
+            -search_results[
+                "mean_train_score"
+            ]
+        )
+
+        search_results[
+            "RMSE_Gap"
+        ] = (
+            search_results[
+                "CV_RMSE"
+            ]
+            -
+            search_results[
+                "Train_RMSE"
+            ]
+        )
+
+        display_columns = [
             "params",
             "CV_RMSE",
+            "Train_RMSE",
+            "RMSE_Gap",
             "std_test_score",
-            "mean_train_score",
         ]
 
         search_results = (
             search_results
             .sort_values(
-                "CV_RMSE"
+                "CV_RMSE",
+                ascending=True,
+            )
+            .reset_index(
+                drop=True
             )
         )
+
+    # --------------------------------------------------------
+    # Binary classification: PR-AUC
+    # --------------------------------------------------------
+
+    elif metric_name == "PR-AUC":
+
+        search_results[
+            "CV_PR_AUC"
+        ] = (
+            search_results[
+                "mean_test_score"
+            ]
+        )
+
+        search_results[
+            "Train_PR_AUC"
+        ] = (
+            search_results[
+                "mean_train_score"
+            ]
+        )
+
+        search_results[
+            "PR_AUC_Gap"
+        ] = (
+            search_results[
+                "Train_PR_AUC"
+            ]
+            -
+            search_results[
+                "CV_PR_AUC"
+            ]
+        )
+
+        display_columns = [
+            "params",
+            "CV_PR_AUC",
+            "Train_PR_AUC",
+            "PR_AUC_Gap",
+            "std_test_score",
+        ]
+
+        search_results = (
+            search_results
+            .sort_values(
+                "CV_PR_AUC",
+                ascending=False,
+            )
+            .reset_index(
+                drop=True
+            )
+        )
+
+    # --------------------------------------------------------
+    # Other classification: ROC-AUC
+    # --------------------------------------------------------
 
     else:
 
-        columns = [
+        search_results[
+            "CV_ROC_AUC"
+        ] = (
+            search_results[
+                "mean_test_score"
+            ]
+        )
+
+        search_results[
+            "Train_ROC_AUC"
+        ] = (
+            search_results[
+                "mean_train_score"
+            ]
+        )
+
+        search_results[
+            "ROC_AUC_Gap"
+        ] = (
+            search_results[
+                "Train_ROC_AUC"
+            ]
+            -
+            search_results[
+                "CV_ROC_AUC"
+            ]
+        )
+
+        display_columns = [
             "params",
-            "mean_test_score",
+            "CV_ROC_AUC",
+            "Train_ROC_AUC",
+            "ROC_AUC_Gap",
             "std_test_score",
-            "mean_train_score",
         ]
 
         search_results = (
             search_results
             .sort_values(
-                "mean_test_score",
+                "CV_ROC_AUC",
                 ascending=False,
+            )
+            .reset_index(
+                drop=True
             )
         )
 
-    print("\nTop parameter combinations:")
+    # --------------------------------------------------------
+    # Print top combinations
+    # --------------------------------------------------------
+
+    print(
+        "\nTop parameter combinations:"
+    )
 
     print(
         search_results[
-            columns
+            display_columns
         ]
         .head(10)
+        .round(6)
         .to_string(
             index=False
         )
     )
+
+    # ========================================================
+    # ADDITIONAL CV METRICS FOR BEST MODEL
+    # ========================================================
+
+    print("\n" + "=" * 70)
+    print(
+        "BEST MODEL CROSS-VALIDATION METRICS"
+    )
+    print("=" * 70)
+
+    best_cv_results = (
+        run_cross_validation(
+            pipeline=(
+                search.best_estimator_
+            ),
+            problem_type=problem_type,
+            X_train=X_train,
+            y_train=y_train,
+        )
+    )
+
+    # ========================================================
+    # RETURN
+    # ========================================================
 
     return (
         search.best_estimator_,

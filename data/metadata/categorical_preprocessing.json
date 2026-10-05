@@ -1,14 +1,18 @@
 {
-    "ordinal_columns": [],
-    "map_columns": [
-        "City_Type",
-        "Gender",
-        "Range_Anxiety_Level"
+    "ordinal_cols": [],
+    "map_cols": [],
+    "onehot_cols": [
+        "cat1",
+        "cat2",
+        "cat4",
+        "cat5",
+        "cat6",
+        "cat8",
+        "cat9"
     ],
-    "onehot_columns": [
-        "Current_Car_Type",
-        "Home_Charging_Possible",
-        "Subsidy_Available",
-        "Will_Buy_EV"
+    "hash_cols": [
+        "campaign",
+        "cat3",
+        "cat7"
     ]
 }

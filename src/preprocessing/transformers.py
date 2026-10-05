@@ -5,7 +5,8 @@ from sklearn.base import (
     BaseEstimator,
     TransformerMixin,
 )
-
+from sklearn.feature_extraction import FeatureHasher
+from scipy import sparse
 
 # ============================================================
 # Quantile Clipper
@@ -235,3 +236,153 @@ class CategoryMapper(
             )
 
         return self.feature_names_in_
+
+class CategoricalFeatureHasher(
+    BaseEstimator,
+    TransformerMixin,
+):
+
+    def __init__(
+        self,
+        columns,
+        n_features=256,
+    ):
+
+        self.columns = columns
+        self.n_features = n_features
+
+    # ========================================================
+    # FIT
+    # ========================================================
+
+    def fit(
+        self,
+        X,
+        y=None,
+    ):
+
+        return self
+
+    # ========================================================
+    # TRANSFORM
+    # ========================================================
+
+    def transform(
+        self,
+        X,
+    ):
+
+        # ColumnTransformer may pass DataFrame
+        # or ndarray depending on configuration.
+
+        if hasattr(
+            X,
+            "columns",
+        ):
+
+            column_data = {
+                col: (
+                    X[col]
+                    .fillna("__MISSING__")
+                    .astype(str)
+                    .tolist()
+                )
+                for col in self.columns
+            }
+
+        else:
+
+            X_array = np.asarray(X)
+
+            column_data = {}
+
+            for i, col in enumerate(
+                self.columns
+            ):
+
+                values = X_array[:, i]
+
+                values = [
+                    (
+                        "__MISSING__"
+                        if value is None
+                        else str(value)
+                    )
+                    for value in values
+                ]
+
+                column_data[col] = values
+
+        hashed_blocks = []
+
+        for col in self.columns:
+
+            values = column_data[col]
+
+            hasher = FeatureHasher(
+                n_features=self.n_features,
+                input_type="string",
+                alternate_sign=False,
+            )
+
+            # Important:
+            # each row is ONE categorical token
+            tokens = [
+                [f"{col}={value}"]
+                for value in values
+            ]
+
+            hashed = hasher.transform(
+                tokens
+            )
+
+            hashed_blocks.append(
+                hashed
+            )
+
+        if not hashed_blocks:
+
+            return sparse.csr_matrix(
+                (
+                    len(X),
+                    0,
+                )
+            )
+
+        # Combine horizontally:
+        #
+        # campaign 256
+        # + cat3 256
+        # + cat7 256
+        # = 768 sparse features
+
+        return sparse.hstack(
+            hashed_blocks,
+            format="csr",
+        )
+
+    # ========================================================
+    # FEATURE NAMES
+    # ========================================================
+
+    def get_feature_names_out(
+        self,
+        input_features=None,
+    ):
+
+        names = []
+
+        for col in self.columns:
+
+            for i in range(
+                self.n_features
+            ):
+
+                names.append(
+                    f"{col}_hash_{i}"
+                )
+
+        return np.asarray(
+            names,
+            dtype=object,
+        )

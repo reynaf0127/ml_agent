@@ -1,23 +1,30 @@
 {
     "excluded_columns": [
-        "id"
+        "uid",
+        "timestamp",
+        "current_cost",
+        "attribution",
+        "impression_number"
     ],
     "categorical_columns": [
-        "City_Type",
-        "Current_Car_Type",
-        "Gender",
-        "Home_Charging_Possible",
-        "Range_Anxiety_Level",
-        "Subsidy_Available",
-        "Will_Buy_EV"
+        "campaign",
+        "cat1",
+        "cat2",
+        "cat3",
+        "cat4",
+        "cat5",
+        "cat6",
+        "cat7",
+        "cat8",
+        "cat9"
     ],
     "numerical_columns": [
-        "Age",
-        "Annual_Income_USD",
-        "Charging_Stations_Near_Home",
-        "Charging_Stations_Near_Work",
-        "Daily_Commute_km",
-        "Environmental_Concern_Level",
-        "Number_of_Cars_Owned"
+        "avg_prior_cost",
+        "conversion",
+        "prior_click_rate",
+        "prior_clicks",
+        "prior_cost",
+        "prior_impressions",
+        "time_since_previous_impression"
     ]
 }

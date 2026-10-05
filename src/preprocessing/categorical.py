@@ -1,177 +1,156 @@
 import json
 import os
 
-import pandas as pd
-
 
 class CategoricalPreprocessor:
 
     def __init__(
         self,
-        df: pd.DataFrame,
-        cat_cols: list[str],
-        excl_cols: list[str],
-        path: str = "data/metadata/categorical_preprocessing.json",
+        df,
+        cat_cols,
+        excl_cols,
+        config_path=(
+            "data/metadata/"
+            "categorical_preprocessing.json"
+        ),
     ):
+
         self.df = df
 
-        self.cat_cols = cat_cols
+        self.cat_cols = [
+            col
+            for col in cat_cols
+            if col not in excl_cols
+        ]
+
         self.excl_cols = excl_cols
 
-        self.path = path
+        self.config_path = (
+            config_path
+        )
 
         self.ordinal_cols = []
         self.map_cols = []
         self.onehot_cols = []
+        self.hash_cols = []
 
-    # --------------------------------------------------
-    # Select ordinal columns
-    # --------------------------------------------------
+    # ========================================================
+    # INPUT HELPER
+    # ========================================================
 
-    def ask_ordinal_columns(self):
+    def _parse_columns(
+        self,
+        value,
+    ):
 
-        print("\n" + "=" * 60)
-        print("ORDINAL COLUMN SELECTION")
-        print("=" * 60)
+        if not value.strip():
+            return []
 
-        print("\nAvailable categorical columns:")
-
-        for i, col in enumerate(
-            self.cat_cols,
-            start=1,
-        ):
-            print(f"{i}. {col}")
-
-        user_input = input(
-            "\nEnter ordinal columns "
-            "(comma separated, or Enter for none):\n> "
-        ).strip()
-
-        if not user_input:
-            self.ordinal_cols = []
-            return
-
-        self.ordinal_cols = [
+        cols = [
             col.strip()
-            for col in user_input.split(",")
+            for col in value.split(",")
             if col.strip()
         ]
 
         invalid = [
             col
-            for col in self.ordinal_cols
+            for col in cols
             if col not in self.cat_cols
         ]
 
         if invalid:
+
             raise ValueError(
-                f"Invalid ordinal columns: {invalid}"
+                "Unknown categorical columns: "
+                f"{invalid}"
             )
 
-    # --------------------------------------------------
-    # Select manually mapped columns
-    # --------------------------------------------------
+        return cols
 
-    def ask_map_columns(self):
+    # ========================================================
+    # LOAD
+    # ========================================================
 
-        available = [
-            col
-            for col in self.cat_cols
-            if col not in self.ordinal_cols
-        ]
+    def _load(
+        self,
+    ):
 
-        print("\n" + "=" * 60)
-        print("MANUAL MAPPING COLUMN SELECTION")
-        print("=" * 60)
-
-        print("\nAvailable columns:")
-
-        for i, col in enumerate(
-            available,
-            start=1,
+        if not os.path.exists(
+            self.config_path
         ):
-            print(f"{i}. {col}")
+            return False
 
-        user_input = input(
-            "\nEnter columns using manual mappings "
-            "(comma separated, or Enter for none):\n> "
-        ).strip()
+        with open(
+            self.config_path,
+            "r",
+        ) as f:
 
-        if not user_input:
-            self.map_cols = []
-            return
+            config = json.load(f)
 
-        self.map_cols = [
-            col.strip()
-            for col in user_input.split(",")
-            if col.strip()
-        ]
-
-        invalid = [
-            col
-            for col in self.map_cols
-            if col not in available
-        ]
-
-        if invalid:
-            raise ValueError(
-                f"Invalid mapping columns: {invalid}"
+        self.ordinal_cols = (
+            config.get(
+                "ordinal_cols",
+                [],
             )
+        )
 
-    # --------------------------------------------------
-    # Determine one-hot columns
-    # --------------------------------------------------
+        self.map_cols = (
+            config.get(
+                "map_cols",
+                [],
+            )
+        )
 
-    def detect_onehot_columns(self):
+        self.onehot_cols = (
+            config.get(
+                "onehot_cols",
+                [],
+            )
+        )
 
-        self.onehot_cols = [
-            col
-            for col in self.cat_cols
-            if col not in self.ordinal_cols
-            and col not in self.map_cols
-            and col not in self.excl_cols
-        ]
+        self.hash_cols = (
+            config.get(
+                "hash_cols",
+                [],
+            )
+        )
 
-    # --------------------------------------------------
-    # Summary
-    # --------------------------------------------------
+        return True
 
-    def summary(self):
+    # ========================================================
+    # SAVE
+    # ========================================================
 
-        print("\n" + "=" * 60)
-        print("CATEGORICAL PREPROCESSING PLAN")
-        print("=" * 60)
-
-        print("\nOrdinal + scale:")
-        print(self.ordinal_cols)
-
-        print("\nManual mapping:")
-        print(self.map_cols)
-
-        print("\nOne-hot encoding:")
-        print(self.onehot_cols)
-
-        print("\nIgnored:")
-        print(self.excl_cols)
-
-    # --------------------------------------------------
-    # Save configuration
-    # --------------------------------------------------
-
-    def save(self):
+    def _save(
+        self,
+    ):
 
         os.makedirs(
-            os.path.dirname(self.path),
+            os.path.dirname(
+                self.config_path
+            ),
             exist_ok=True,
         )
 
         config = {
-            "ordinal_columns": self.ordinal_cols,
-            "map_columns": self.map_cols,
-            "onehot_columns": self.onehot_cols,
+            "ordinal_cols":
+                self.ordinal_cols,
+
+            "map_cols":
+                self.map_cols,
+
+            "onehot_cols":
+                self.onehot_cols,
+
+            "hash_cols":
+                self.hash_cols,
         }
 
-        with open(self.path, "w") as f:
+        with open(
+            self.config_path,
+            "w",
+        ) as f:
+
             json.dump(
                 config,
                 f,
@@ -179,70 +158,200 @@ class CategoricalPreprocessor:
             )
 
         print(
-            f"\n[CONFIG] Saved to {self.path}"
+            "\n[CONFIG] "
+            f"Saved to {self.config_path}"
         )
 
-    # --------------------------------------------------
-    # Run
-    # --------------------------------------------------
+    # ========================================================
+    # PRINT PLAN
+    # ========================================================
 
-    def run(self):
-        # --------------------------------------------------
-        # Existing preprocessing configuration
-        # --------------------------------------------------
-        if os.path.exists(self.path):
+    def _print_plan(
+        self,
+    ):
 
-            self.load()
+        print(
+            "\n" + "=" * 60
+        )
 
-            print("\n" + "=" * 60)
-            print("EXISTING CATEGORICAL PREPROCESSING PLAN")
-            print("=" * 60)
+        print(
+            "CATEGORICAL PREPROCESSING PLAN"
+        )
 
-            self.summary()
+        print(
+            "=" * 60
+        )
+
+        print(
+            "\nOrdinal + scale:"
+        )
+        print(
+            self.ordinal_cols
+        )
+
+        print(
+            "\nManual mapping:"
+        )
+        print(
+            self.map_cols
+        )
+
+        print(
+            "\nOne-hot encoding:"
+        )
+        print(
+            self.onehot_cols
+        )
+
+        print(
+            "\nFeature hashing:"
+        )
+        print(
+            self.hash_cols
+        )
+
+        print(
+            "\nIgnored:"
+        )
+        print(
+            self.excl_cols
+        )
+
+    # ========================================================
+    # UPDATE
+    # ========================================================
+
+    def _update(
+        self,
+    ):
+
+        print(
+            "\nAvailable categorical columns:"
+        )
+
+        for col in self.cat_cols:
+
+            cardinality = (
+                self.df[col]
+                .nunique(
+                    dropna=False
+                )
+            )
+
+            print(
+                f"  - {col}: "
+                f"{cardinality:,} unique"
+            )
+
+        print(
+            "\nEnter ordinal columns "
+            "(comma separated, Enter for none):"
+        )
+
+        self.ordinal_cols = (
+            self._parse_columns(
+                input("> ")
+            )
+        )
+
+        print(
+            "\nEnter manual mapping columns "
+            "(comma separated, Enter for none):"
+        )
+
+        self.map_cols = (
+            self._parse_columns(
+                input("> ")
+            )
+        )
+
+        print(
+            "\nEnter feature hashing columns "
+            "(comma separated, Enter for none):"
+        )
+
+        self.hash_cols = (
+            self._parse_columns(
+                input("> ")
+            )
+        )
+
+        # ----------------------------------------
+        # Check duplicates
+        # ----------------------------------------
+
+        selected = (
+            self.ordinal_cols
+            + self.map_cols
+            + self.hash_cols
+        )
+
+        duplicates = {
+            col
+            for col in selected
+            if selected.count(col) > 1
+        }
+
+        if duplicates:
+
+            raise ValueError(
+                "Columns assigned to multiple "
+                "categorical strategies: "
+                f"{duplicates}"
+            )
+
+        # ----------------------------------------
+        # Everything else becomes one-hot
+        # ----------------------------------------
+
+        self.onehot_cols = [
+            col
+            for col in self.cat_cols
+            if col not in selected
+        ]
+
+        self._save()
+
+    # ========================================================
+    # RUN
+    # ========================================================
+
+    def run(
+        self,
+    ):
+
+        exists = self._load()
+
+        if exists:
+
+            self._print_plan()
 
             update = input(
-                "\nDo you want to update this plan? (y/N):\n> "
+                "\nDo you want to update "
+                "this plan? (y/N):\n> "
             ).strip().lower()
 
-            if update not in ["y", "yes"]:
+            if update in [
+                "y",
+                "yes",
+            ]:
 
-                print(
-                    "\n[CONFIG] Using existing "
-                    "categorical preprocessing plan."
-                )
+                self._update()
 
-                return (
-                    self.ordinal_cols,
-                    self.map_cols,
-                    self.onehot_cols,
-                )
+        else:
 
-        # --------------------------------------------------
-        # Create / update plan
-        # --------------------------------------------------
-        self.ask_ordinal_columns()
-        self.ask_map_columns()
-        self.detect_onehot_columns()
-        self.summary()
-        self.save()
+            print(
+                "\nNo categorical "
+                "preprocessing configuration found."
+            )
+
+            self._update()
+
+        self._print_plan()
+
         return (
             self.ordinal_cols,
             self.map_cols,
             self.onehot_cols,
-        )
-
-    def load(self):
-        with open(self.path, "r") as f:
-            config = json.load(f)
-        self.ordinal_cols = config.get(
-            "ordinal_columns",
-            [],
-        )
-        self.map_cols = config.get(
-            "map_columns",
-            [],
-        )
-        self.onehot_cols = config.get(
-            "onehot_columns",
-            [],
+            self.hash_cols,
         )

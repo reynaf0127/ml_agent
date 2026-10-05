@@ -25,12 +25,8 @@ from src.modeling.finalize import (
 )
 from src.modeling.interpret import ModelInterpreter
 from src.utils.run_logger import RunLogger
-from sklearn import set_config
-
-set_config(
-    transform_output="pandas"
-)
-
+from src.modeling.predict import ModelPredictor
+from scipy import sparse
 PROJECT_ID = "project-business-prd"
 DATASET_ID = "prism_studio"
 
@@ -403,7 +399,7 @@ categorical_preprocessor = CategoricalPreprocessor(
     cat_cols=cat_cols,
     excl_cols=excl_cols
 )
-ordinal_cols, map_cols, onehot_cols = categorical_preprocessor.run()
+ordinal_cols, map_cols, onehot_cols, hash_cols = categorical_preprocessor.run()
 
 
 numerical_preprocessor = NumericalPreprocessor(
@@ -558,8 +554,10 @@ preprocessor = build_preprocessor(
     ordinal_cols=ordinal_cols,
     map_cols=map_cols,
     onehot_cols=onehot_cols,
+    hash_cols=hash_cols,
     log_cols=log_cols,
     clip_cols=clip_cols,
+    hash_n_features=256,
 )
 
 
@@ -570,6 +568,10 @@ preprocessor = build_preprocessor(
 print("\n" + "=" * 60)
 print("TESTING PREPROCESSING PIPELINE")
 print("=" * 60)
+
+# ------------------------------------------------------------
+# Fit preprocessing using training data only
+# ------------------------------------------------------------
 
 X_train_processed = (
     preprocessor.fit_transform(
@@ -589,6 +591,10 @@ X_test_processed = (
     )
 )
 
+
+# ============================================================
+# SHAPES
+# ============================================================
 
 print(
     "\nRaw train shape:",
@@ -610,51 +616,143 @@ print(
     X_test_processed.shape,
 )
 
-print("\nProcessed features:")
-for col in X_train_processed.columns:
-    print(f"  - {col}")
-print("\nMissing values after preprocessing:")
-print(X_train_processed.isnull().sum().sum())
-print("\nInfinite values:")
-print(
-    np.isinf(
-        X_train_processed.select_dtypes(
-            include="number"
-        )
-    ).sum().sum()
+
+# ============================================================
+# CHECK SPARSE / DENSE
+# ============================================================
+
+is_sparse = sparse.issparse(
+    X_train_processed
 )
+
+print(
+    "\nSparse matrix:",
+    is_sparse,
+)
+
+
+# ============================================================
+# MISSING / INFINITE CHECK
 # ============================================================
 
-# BASELINE MODEL TRAINING
+if is_sparse:
 
-# ============================================================
+    # For scipy sparse matrices,
+    # .data contains only stored non-zero values.
 
-results, fitted_models = (
-
-    train_models(
-
-        models=models,
-
-        preprocessor=preprocessor,
-
-        problem_type=problem_type,
-
-        X_train=X_train,
-
-        y_train=y_train,
-
-        X_val=X_val,
-
-        y_val=y_val,
-
+    values = (
+        X_train_processed.data
     )
 
+else:
+
+    values = np.asarray(
+        X_train_processed
+    )
+
+
+missing_count = int(
+    np.isnan(values).sum()
 )
 
+infinite_count = int(
+    np.isinf(values).sum()
+)
+
+
+print(
+    "\nMissing values after preprocessing:",
+    missing_count,
+)
+
+print(
+    "Infinite values after preprocessing:",
+    infinite_count,
+)
+
+
+# ============================================================
+# SPARSITY INFORMATION
 # ============================================================
 
-# OPTIONAL DETAILED BASELINE EVALUATION
+if is_sparse:
 
+    total_cells = (
+        X_train_processed.shape[0]
+        * X_train_processed.shape[1]
+    )
+
+    nonzero_cells = (
+        X_train_processed.nnz
+    )
+
+    density = (
+        nonzero_cells
+        / total_cells
+    )
+
+    print(
+        "\nNon-zero values:",
+        f"{nonzero_cells:,}",
+    )
+
+    print(
+        "Matrix density:",
+        f"{density:.4%}",
+    )
+
+
+# ============================================================
+# FEATURE NAMES
+# ============================================================
+
+try:
+
+    feature_names = (
+        preprocessor
+        .get_feature_names_out()
+    )
+
+    print(
+        "\nNumber of processed features:",
+        len(feature_names),
+    )
+
+    print(
+        "\nFirst 30 processed features:"
+    )
+
+    for feature in (
+        feature_names[:30]
+    ):
+
+        print(
+            f"  - {feature}"
+        )
+
+except Exception as e:
+
+    print(
+        "\n[PREPROCESSING] "
+        "Could not retrieve "
+        f"feature names: {e}"
+    )
+# ============================================================
+# BASELINE MODEL TRAINING
+# ============================================================
+results, fitted_models = (
+    train_models(
+        models=models,
+        preprocessor=preprocessor,
+        problem_type=problem_type,
+        X_train=X_train,
+        y_train=y_train,
+        X_val=X_val,
+        y_val=y_val,
+    )
+)
+# ============================================================
+# OPTIONAL DETAILED BASELINE EVALUATION
 # ============================================================
 
 print("\n" + "=" * 70)
@@ -1107,14 +1205,14 @@ if final_model is not None:
         if final_model_name in [
             "linear_regression",
             "ridge",
+            "logistic_regression",
         ]:
+
             coef_df = (
                 interpreter
                 .linear_coefficients(
                     pipeline=final_model,
-                    model_name=(
-                        final_model_name
-                    ),
+                    model_name=final_model_name,
                 )
             )
         # ====================================================
@@ -1259,6 +1357,152 @@ if final_model is not None:
             print("\n" + "=" * 70)
             print("SHAP ANALYSIS COMPLETE")
             print("=" * 70)
+# ============================================================
+# FINAL PREDICTION OUTPUT
+# ============================================================
+
+if final_model is not None:
+
+    print("\n" + "=" * 70)
+    print("FINAL PREDICTION OUTPUT")
+    print("=" * 70)
+
+    run_prediction = input(
+        "\nGenerate prediction table "
+        "for the full modeling dataset? "
+        "(Y/n):\n> "
+    ).strip().lower()
+
+    if run_prediction in [
+        "",
+        "y",
+        "yes",
+    ]:
+
+        predictor = ModelPredictor()
+
+        # ----------------------------------------------------
+        # Score all rows currently loaded into the project
+        # ----------------------------------------------------
+
+        X_full = (
+            df[feature_cols]
+            .copy()
+        )
+
+        prediction_df = (
+            predictor.predict(
+                pipeline=final_model,
+                X=X_full,
+                original_df=df,
+                problem_type=problem_type,
+                model_name=final_model_name,
+                target_col=target_col,
+            )
+        )
+
+        # ----------------------------------------------------
+        # Save locally
+        # ----------------------------------------------------
+
+        prediction_path = (
+            predictor.save(
+                prediction_df=prediction_df,
+                model_name=final_model_name,
+                target_col=target_col,
+            )
+        )
+
+        # ====================================================
+        # OPTIONAL BIGQUERY UPLOAD
+        # ====================================================
+
+        upload_bq = input(
+            "\nUpload prediction table "
+            "to BigQuery? (y/N):\n> "
+        ).strip().lower()
+
+        if upload_bq in [
+            "y",
+            "yes",
+        ]:
+
+            # -----------------------------------------------
+            # Dataset
+            # -----------------------------------------------
+
+            default_dataset = (
+                DATASET_ID
+            )
+
+            dataset_input = input(
+                "\nBigQuery dataset "
+                f"(Enter for '{default_dataset}'):\n> "
+            ).strip()
+
+            if dataset_input:
+
+                output_dataset = (
+                    dataset_input
+                )
+
+            else:
+
+                output_dataset = (
+                    default_dataset
+                )
+
+            # -----------------------------------------------
+            # Table name
+            # -----------------------------------------------
+
+            default_table = (
+                f"predictions_"
+                f"{final_model_name}_"
+                f"{target_col}"
+            )
+
+            table_input = input(
+                "\nBigQuery table name "
+                f"(Enter for '{default_table}'):\n> "
+            ).strip()
+
+            if table_input:
+
+                output_table = (
+                    table_input
+                )
+
+            else:
+
+                output_table = (
+                    default_table
+                )
+
+            # -----------------------------------------------
+            # Upload
+            # -----------------------------------------------
+
+            bq_output = (
+                BigQueryDataSource()
+            )
+
+            bq_output.upload_dataframe(
+                df=prediction_df,
+                project_id=PROJECT_ID,
+                dataset_id=output_dataset,
+                table_name=output_table,
+                write_disposition=(
+                    "WRITE_TRUNCATE"
+                ),
+            )
+
+else:
+
+    print(
+        "\n[PREDICTION] "
+        "No final model available."
+    )
 
 # ============================================================
 # PIPELINE COMPLETE

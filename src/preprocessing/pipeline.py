@@ -19,6 +19,7 @@ from config.category_mappings import (
 from src.preprocessing.transformers import (
     QuantileClipper,
     CategoryMapper,
+    CategoricalFeatureHasher,
 )
 
 
@@ -48,8 +49,10 @@ def build_preprocessor(
     ordinal_cols,
     map_cols,
     onehot_cols,
+    hash_cols,
     log_cols,
     clip_cols,
+    hash_n_features=256,
 ):
     """
     Build preprocessing pipeline using the feature configuration
@@ -258,7 +261,22 @@ def build_preprocessor(
                 onehot_cols,
             )
         )
-
+    # ========================================================
+    # HASHING
+    # ========================================================
+    if hash_cols:
+        transformers.append(
+            (
+                "hash",
+                CategoricalFeatureHasher(
+                    columns=hash_cols,
+                    n_features=(
+                        hash_n_features
+                    ),
+                ),
+                hash_cols,
+            )
+        )
     # ========================================================
     # NUMERICAL COLUMN GROUPS
     # ========================================================
@@ -499,10 +517,8 @@ def build_preprocessor(
 
     preprocessor = ColumnTransformer(
         transformers=transformers,
-
         # Ignore anything that was not explicitly selected.
         remainder="drop",
-
         verbose_feature_names_out=False,
     )
 

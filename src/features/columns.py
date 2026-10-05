@@ -277,6 +277,7 @@ class ColumnManager:
         print(self.num_cols)
 
     def finalize(self):
+        self._move_numeric_to_categorical()
         self.ask_boolean_columns()
         self.save()
         self.summary()
@@ -319,3 +320,73 @@ class ColumnManager:
         print("\n[CONFIG] Using existing configuration.")
 
         return True
+
+    def _move_numeric_to_categorical(
+        self,
+    ):
+        """
+        Allow numeric-coded categorical variables to be
+        manually moved from num_cols to cat_cols.
+
+        Examples:
+            campaign_id
+            product_id
+            zip_code
+            cat1, cat2, ...
+        """
+
+        print("\n" + "=" * 60)
+        print("NUMERIC → CATEGORICAL OVERRIDE")
+        print("=" * 60)
+
+        print(
+            "\nCurrent numerical columns:"
+        )
+
+        for col in self.num_cols:
+            print(f"  - {col}")
+
+        value = input(
+            "\nEnter numerical columns that should "
+            "be treated as categorical "
+            "(comma separated, Enter for none):\n> "
+        ).strip()
+
+        if not value:
+            return
+
+        columns = [
+            col.strip()
+            for col in value.split(",")
+            if col.strip()
+        ]
+
+        invalid = [
+            col
+            for col in columns
+            if col not in self.num_cols
+        ]
+
+        if invalid:
+            raise ValueError(
+                "These columns are not currently "
+                f"numerical columns: {invalid}"
+            )
+
+        for col in columns:
+
+            self.num_cols.remove(
+                col
+            )
+
+            if col not in self.cat_cols:
+                self.cat_cols.append(
+                    col
+                )
+
+        print(
+            "\nMoved to categorical:"
+        )
+
+        for col in columns:
+            print(f"  - {col}")
