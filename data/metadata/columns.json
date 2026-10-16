@@ -1,30 +1,22 @@
 {
     "excluded_columns": [
-        "uid",
-        "timestamp",
-        "current_cost",
-        "attribution",
-        "impression_number"
+        "video_id",
+        "views",
+        "likes",
+        "comments",
+        "shares"
     ],
     "categorical_columns": [
-        "campaign",
-        "cat1",
-        "cat2",
-        "cat3",
-        "cat4",
-        "cat5",
-        "cat6",
-        "cat7",
-        "cat8",
-        "cat9"
+        "category",
+        "upload_day"
     ],
     "numerical_columns": [
-        "avg_prior_cost",
-        "conversion",
-        "prior_click_rate",
-        "prior_clicks",
-        "prior_cost",
-        "prior_impressions",
-        "time_since_previous_impression"
+        "description_length",
+        "duration_sec",
+        "subscriber_count",
+        "tags_count",
+        "title_length",
+        "upload_hour",
+        "viral"
     ]
 }

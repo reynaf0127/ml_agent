@@ -1,0 +1,60 @@
+{
+    "features": [
+        "campaign",
+        "cat1",
+        "cat2",
+        "cat3",
+        "cat4",
+        "cat5",
+        "cat6",
+        "cat7",
+        "cat8",
+        "cat9",
+        "prior_impressions",
+        "prior_clicks",
+        "prior_click_rate",
+        "prior_cost",
+        "avg_prior_cost",
+        "time_since_previous_impression"
+    ],
+    "categorical": [
+        "campaign",
+        "cat1",
+        "cat2",
+        "cat3",
+        "cat4",
+        "cat5",
+        "cat6",
+        "cat7",
+        "cat8",
+        "cat9"
+    ],
+    "numerical": [
+        "prior_impressions",
+        "prior_clicks",
+        "prior_click_rate",
+        "prior_cost",
+        "avg_prior_cost",
+        "time_since_previous_impression"
+    ],
+    "boolean": [],
+    "onehot": [
+        "cat1",
+        "cat2",
+        "cat4",
+        "cat5",
+        "cat6",
+        "cat8",
+        "cat9"
+    ],
+    "hash": [
+        "campaign",
+        "cat3",
+        "cat7"
+    ],
+    "ordinal": [],
+    "manual_mapping": [],
+    "log_transform": [],
+    "quantile_clip": [],
+    "hash_n_features": 256
+}

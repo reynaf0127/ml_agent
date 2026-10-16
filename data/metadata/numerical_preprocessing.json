@@ -1,16 +1,8 @@
 {
     "log_columns": [
-        "avg_prior_cost",
-        "prior_clicks",
-        "prior_cost",
-        "prior_impressions",
-        "time_since_previous_impression"
+        "subscriber_count"
     ],
-    "clip_columns": [
-        "prior_clicks",
-        "prior_cost",
-        "prior_impressions"
-    ],
+    "clip_columns": [],
     "clip_quantiles": {
         "lower": 0.01,
         "upper": 0.99

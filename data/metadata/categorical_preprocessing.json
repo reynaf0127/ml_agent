@@ -2,17 +2,8 @@
     "ordinal_cols": [],
     "map_cols": [],
     "onehot_cols": [
-        "cat1",
-        "cat2",
-        "cat4",
-        "cat5",
-        "cat6",
-        "cat8",
-        "cat9"
+        "category",
+        "upload_day"
     ],
-    "hash_cols": [
-        "campaign",
-        "cat3",
-        "cat7"
-    ]
+    "hash_cols": []
 }

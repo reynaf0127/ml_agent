@@ -29,3 +29,6 @@ artifacts/
 credentials/
 *.key.json
 service-account*.json
+
+# Generated ML outputs
+artifacts/
